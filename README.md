@@ -5,3 +5,7 @@
 
 不是每个交易想法都能变成策略，但至少要保证有想法。
 
+pair_trading.R: 
+	Pair Trading Strategy and Backtesting using Quantstrat
+        http://www.quantinsti.com/blog/pair-trading-strategy-backtesting-using-quantstrat/
+	Marco Bicolas Dibo

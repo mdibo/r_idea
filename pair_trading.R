@@ -72,40 +72,40 @@ ls(.strategy) # .strategy holds the orderbook and strategy object
 PairRatio <- function(x) { #returns the ratio of close prices for 2 symbols
   x1 <- get(x[1])
   x2 <- get(x[2])
-  rat <- log10(Cl(x1) / Cl(x2))
+  rat <- log10(Cl(x1) / Cl(x2))  # close 价格比值的对数
   colnames(rat) <- 'Price.Ratio'
   rat
 }
 Price.Ratio <- PairRatio(c(symb1[1],symb2[1]))
 MaRatio <- function(x){
   N <- 20
-  Mavg <- rollapply(x, N , mean)
+  Mavg <- rollapply(x, N , mean) # 20日均线
   colnames(Mavg) <- 'Price.Ratio.MA'
   Mavg
 }
 Price.Ratio.MA <- MaRatio(Price.Ratio)
 Sd <- function(x){
   N <- 20
-  Stand.dev <- rollapply(x, N, sd)
+  Stand.dev <- rollapply(x, N, sd) #20日标准差
   colnames(Stand.dev) <- "Price.Ratio.SD"
   Stand.dev
 }
 Price.Ratio.SD <- Sd(Price.Ratio)
 ZScore <- function(x){
-  a1 <- x$Price.Ratio
+  a1 <- x$Price.Ratio  
   b1 <- x$Price.Ratio.MA
   c1 <- x$Price.Ratio.SD
-  z <- (a1-b1)/c1
+  z <- (a1-b1)/c1  # 20日为一个周期标准化 (R-mu)/sd
   colnames(z)<- 'Z.Score'
   z
 }
 # b) Augmented Dickey Fuller
 ft2<-function(x){
-  adf.test(x)$p.value
+  adf.test(x)$p.value # adf检验 p值
 }
 Pval <- function(x){
   N.ADF <- 60
-  Augmented.df <- rollapply(x, width = N.ADF, ft2)
+  Augmented.df <- rollapply(x, width = N.ADF, ft2) # 60日为周期，做ADF检验
   colnames(Augmented.df) <- "P.Value"
   Augmented.df
 }
@@ -118,33 +118,40 @@ add.indicator(strategy = qs.strategy, name = "Pval", arguments =
 
 Z.Score <- ZScore(x=merge(Price.Ratio,Price.Ratio.MA,Price.Ratio.SD))
 plot(main = "Z-Score Time Series", xlab = "Date" , ylab = "Z-Score",Z.Score, type = "l" )
-abline(h = 2, col = 2, lwd = 3 ,lty = 2)
+abline(h = 2, col = 2, lwd = 3 ,lty = 2) 
 abline(h = -2, col = 3, lwd = 3 ,lty = 2)
 
 alpha = 1 # We set it to 0.1 if we want a 10% significance level. If we want to set the ADF test (second condition)
 #off, we just change it to "1", in that case the p-value will always be lower than the significance level and the # and the strategy will not require the pair to be cointegrated.
 
+# alpha 是考虑到 引入ADF检验的一个值，如果ADF检验通不过，即使有信号也不参与交易。
+# alphg=1 的时候， 则ADF检验不考虑。
+
 # Z-Score entry and exit thresholds:
 
-buyThresh = -2
+buyThresh = -2 # 图中红线和绿线分别是买入和卖出信号。
 sellThresh = -buyThresh
 exitlong = 1
 exitshort = 1
 
 # Before running our backtest, we have to add the signals, position limits and rules of our strategy:
-  
+
+# z-score>2， 触发多头策略  
 add.signal(qs.strategy, name="sigThreshold",arguments=list(column="Z.Score", threshold=buyThresh,
                                                              relationship="lt", cross=FALSE),label="longEntryZ")
-
+# P-value 影响是否进入
 add.signal(qs.strategy, name="sigThreshold",arguments=list(column="P.Value", threshold= alpha,
                                                            relationship="lt", cross=FALSE),label="PEntry")
-
+# 上述两个信号逻辑并来决定最终是否为进信号
 add.signal(qs.strategy, name="sigAND",
            arguments=list(columns=c("longEntryZ", "PEntry"), cross=FALSE),
            label="longEntry")
 
+# z-score < 1，触发多头退出信号。
 add.signal(qs.strategy, name="sigThreshold",arguments=list(column="Z.Score", threshold= exitlong,
                                                            relationship="gt", cross=FALSE),label="longExit")
+
+# 下面类似定义空头进出，进信号总是严于出信号
 
 add.signal(qs.strategy, name="sigThreshold",arguments=list(column="Z.Score", threshold=sellThresh,
                                                            relationship="gt", cross=FALSE),label="shortEntryZ")
@@ -155,6 +162,7 @@ add.signal(qs.strategy, name="sigAND", arguments=list(columns=c("shortEntryZ", "
 add.signal(qs.strategy, name="sigThreshold",arguments=list(column="Z.Score", threshold= exitshort,
                                                            relationship="lt", cross=FALSE),label="shortExit")
 
+# 仓位限制
 addPosLimit( portfolio = qs.strategy, # add position limit rules
              symbol = 'spread',
              timestamp = initDate,
@@ -162,6 +170,7 @@ addPosLimit( portfolio = qs.strategy, # add position limit rules
              longlevels = 1,
              minpos = -3000)
 
+# 两种进信号和相应的出信号
 add.rule(qs.strategy, name='ruleSignal',arguments = list(sigcol="longEntry",
                                                          sigval=TRUE, orderqty=3000,  osFUN = osMaxPos, replace = FALSE, ordertype='market',
                                                          orderside='long', prefer = "open"), type='enter' )
@@ -188,6 +197,9 @@ updatePortf(qs.strategy)
 updateAcct(qs.strategy)
 
 updateEndEq(qs.strategy)
+
+# 由于只有 OHLC 数据，交易频率肯定是日间的，估计是以收盘价为准
+# 但是我从数据当中看到了分钟？
 
 chart.P2 = function (Portfolio, Symbol, Dates = NULL, ..., TA = NULL)
 {
