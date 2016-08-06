@@ -84,12 +84,14 @@ rm(sh601988_market, sh601988_fuquan)
 #   3. 非交易日 OHL 为NA, close,factor 由前一交易日后移， VA为0.
 ############################################################################################################
 
-min(sh601288$date)
-min(sh601398$date)
-min(sh601939$date)
-min(sh601988$date)
 # 农业银行上市时间最短
+# 这里调用了 tushare 中的通联接口来获得交易日历
 
+library("rPython")
+python.exec("import tushare")
+python.exec("tushare.set_token('fa8d82ec55d910894965982e026b47469a99b4395df2d4ef90c8c0ddd04a298d')")
+python.exec("trade_cal = tushare.Master().TradeCal(exchangeCD='XSHG', beginDate='20110101', endDate='20160731', field='calendarDate,isOpen,prevTradeDate')")
+python.exec("trade_cal.to_csv('./data/trade_cal', index=False)")
 
 ############################################################################################################
 # Z-score and ADF-test
@@ -99,15 +101,14 @@ min(sh601988$date)
 
 stock_a = sh601288
 stock_b = sh601398
-
 start_date = "2011-01-01"
 end_date = "2013-12-31"
+
+trade_cal = read.table('./data/trade_cal', sep=",", stringsAsFactors = FALSE, header=TRUE)
 
 
 stock_a <- stock_a[stock_a$date<=end_date & stock_a$date>=start_date, ]
 stock_b <- stock_b[stock_b$date<=end_date & stock_b$date>=start_date, ]
 all(stock_a$date==stock_b$date)
 
-stock_a[35:40, ]
-stock_b[35:40, ]
 
