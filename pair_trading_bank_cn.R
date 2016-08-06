@@ -109,6 +109,8 @@ trade_cal = read.table('./data/trade_cal', sep=",", stringsAsFactors = FALSE, he
 
 stock_a <- stock_a[stock_a$date<=end_date & stock_a$date>=start_date, ]
 stock_b <- stock_b[stock_b$date<=end_date & stock_b$date>=start_date, ]
+trade_cal_sub <- trade_cal[trade_cal$calendarDate<=end_date & trade_cal$calendarDate>=start_date, ]
+
 all(stock_a$date==stock_b$date)
 
 
