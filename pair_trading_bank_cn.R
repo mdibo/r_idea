@@ -111,6 +111,6 @@ stock_a <- stock_a[stock_a$date<=end_date & stock_a$date>=start_date, ]
 stock_b <- stock_b[stock_b$date<=end_date & stock_b$date>=start_date, ]
 trade_cal_sub <- trade_cal[trade_cal$calendarDate<=end_date & trade_cal$calendarDate>=start_date, ]
 
-all(stock_a$date==stock_b$date)
-
+stock_a_merge <- merge(x=stock_a, y = trade_cal_sub, by.x="date", by.y="calendarDate", all.x=TRUE, all.y=TRUE)
+stock_b_merge <- merge(x=stock_b, y = trade_cal_sub, by.x="date", by.y="calendarDate", all.x=TRUE, all.y=TRUE)
 
