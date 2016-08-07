@@ -119,16 +119,6 @@ n_adf_win = 60
 stock_a = sh601288
 stock_b = sh601398
 
-
-
-date_a <- stock_a$date
-date_b <- stock_b$date
-
-
-setdiff(date_a, date_b)
-setdiff(date_b, date_a)
-
-
 trade_cal = read.table('./data/trade_cal', sep=",", stringsAsFactors = FALSE, header=TRUE)
 
 
@@ -223,9 +213,162 @@ abline(a=-1, b=0, col="gray60", lty=2)
 
 # 显然在分红派息配股之后，进出信号短时间内会有所改变
 
+# 为了方便比较 6次， 将上面的函数封装一下。
+
+
+
+pr_mpr_gen <- function(stock_a, stock_b, trade_cal, start_date, end_date, n_window){
+  
+  stock_a <- stock_a[stock_a$date<=end_date & stock_a$date>=start_date, ]
+  stock_b <- stock_b[stock_b$date<=end_date & stock_b$date>=start_date, ]
+  trade_cal_sub <- trade_cal[trade_cal$calendarDate<=end_date & trade_cal$calendarDate>=start_date, ]
+  
+  # stock_data in trading days
+  stock_data <- merge(x=stock_a, y=stock_b, by.x="date", by.y="date", all.x=TRUE, all.y=TRUE, suffixes = c("_a","_b"))
+  stock_data <- merge(x=stock_data, y =trade_cal_sub, by.x="date", by.y ="calendarDate", all.x=TRUE, all.y=TRUE)
+  stock_data <- stock_data[stock_data$isOpen==1,]
+  
+  n <- nrow(stock_data)
+  
+  # close and factor filling
+  na_filling  <- function(x){
+    for(i in 2:length(x)){
+      if(is.na(x[i])){
+        x[i]<- x[i-1]
+      }
+    }
+    return(x)
+  }
+  stock_data$close_a <- na_filling(stock_data$close_a)
+  stock_data$factor_a <- na_filling(stock_data$factor_a)
+  stock_data$close_b <- na_filling(stock_data$close_b)
+  stock_data$factor_b <- na_filling(stock_data$factor_b)
+  
+  # price ratio and moving average/sd
+  stock_data$price_ratio <- log(stock_data$close_a/stock_data$close_b)
+  stock_data$pr_ma <- NA
+  stock_data$pr_msd <- NA
+  
+  for(i in n_window:n){
+    
+    stock_data[i, "pr_ma"] <- mean(stock_data[(i-n_window+1):i, "price_ratio"])
+    stock_data[i, "pr_msd"] <- sd(stock_data[(i-n_window+1):i, "price_ratio"])
+  }
+  
+  # price rtio's z-score
+  
+  stock_data$pr_z_score <- (stock_data$price_ratio - stock_data$pr_ma)/stock_data$pr_msd
+  # modified price ratio
+  # 因为要考虑到分红派息的问题
+  # 股票分红派息配股的时候，股价会相应下降，这个时候会对“价差”影响较大
+  # 不如使用复权价格来看看 price ratio
+  # 复权方法:
+  #   定点前复权
+  #   在交易日 k， 以交易日 k-20 为定锚进行复权。
+  
+  
+  stock_data$mod_price_ratio <- log(stock_data$close_a/stock_data$close_b)
+  stock_data$mpr_ma <- NA
+  stock_data$mpr_sd <- NA
+  
+  for(i in n_window:n){
+    
+    fuquan_price_a <- stock_data[i, "close_a"]*stock_data[i, "factor_a"]/stock_data[i-n_window+1, "factor_a"]
+    fuquan_price_b <- stock_data[i, "close_b"]*stock_data[i, "factor_b"]/stock_data[i-n_window+1, "factor_b"]
+    stock_data[i, "mod_price_ratio"] <- log(fuquan_price_a/fuquan_price_b)
+    stock_data[i, "mpr_ma"] <- mean(stock_data[(i-n_window+1):i, "mod_price_ratio"])
+    stock_data[i, "mpr_msd"] <- sd(stock_data[(i-n_window+1):i, "mod_price_ratio"])
+    
+  }
+  
+  stock_data$mpr_z_score <- (stock_data$mod_price_ratio - stock_data$mpr_ma)/stock_data$mpr_msd
+  
+  return(stock_data)
+  
+}
 
 
 
 
 
 
+
+
+
+start_date = "2011-01-01"
+end_date = "2013-12-31"
+n_window = 20
+
+
+stock_a = sh601288
+stock_b = sh601398
+trade_cal = read.table('./data/trade_cal', sep=",", stringsAsFactors = FALSE, header=TRUE)
+
+
+# 601288 v.s. 601398
+stock_data <- pr_mpr_gen(sh601288, sh601398, trade_cal, 
+                         start_date = start_date, end_date = end_date, n_window = 20)
+
+plot(as.Date(stock_data$date),stock_data$pr_z_score, type='l', main="primitive price ratio z-score", xlab="date", ylab="z-score")
+abline(a=2, b=0, col="red", lty=1)
+abline(a=1, b=0, col="red", lty=2)
+abline(a=-2, b=0, col="skyblue", lty=1)
+abline(a=-1, b=0, col="skyblue", lty=2)
+
+
+plot(as.Date(stock_data$date),stock_data$mpr_z_score, type='l', main="modified price ratio z-score", xlab="date", ylab="z-score")
+abline(a=2, b=0, col="red", lty=1)
+abline(a=1, b=0, col="red", lty=2)
+abline(a=-2, b=0, col="skyblue", lty=1)
+abline(a=-1, b=0, col="skyblue", lty=2)
+
+plot(stock_data$pr_z_score, type="l", col="darkred", xlab="", ylab="", main="pr v.s. mpr")
+lines(stock_data$mpr_z_score, type="l", col="darkblue")
+abline(a=2, b=0, col="gray60", lty=1)
+abline(a=1, b=0, col="gray60", lty=2)
+abline(a=-2, b=0, col="gray60", lty=1)
+abline(a=-1, b=0, col="gray60", lty=2)
+
+
+# compare all 6 possibilities
+
+start_date = "2011-01-01"
+end_date = "2013-12-31"
+n_window = 20
+
+stock_list <- c("sh601288", "sh601398", "sh601939", "sh601988")
+
+stock_pair <- combn(stock_list,2)
+n <- ncol(stock_pair)
+
+for(j in 1:n){
+  
+  stock_a <- get(stock_pair[1,j])
+  stock_b <- get(stock_pair[2,j])
+  
+  stock_data <- pr_mpr_gen(stock_a, stock_b, trade_cal, 
+                           start_date = start_date, end_date = end_date, n_window = 20)
+  
+  # plot(as.Date(stock_data$date),stock_data$pr_z_score, type='l', 
+  #      main=paste("primitive price ratio z-score",stock_pair[1,j],stock_pair[2,j],sep="," ), xlab="date", ylab="z-score")
+  # abline(a=2, b=0, col="red", lty=1)
+  # abline(a=1, b=0, col="red", lty=2)
+  # abline(a=-2, b=0, col="skyblue", lty=1)
+  # abline(a=-1, b=0, col="skyblue", lty=2)
+  # 
+  # 
+  # plot(as.Date(stock_data$date),stock_data$mpr_z_score, type='l', 
+  #      main=paste("modified price ratio z-score",stock_pair[1,j],stock_pair[2,j],sep="," ), xlab="date", ylab="z-score")
+  # abline(a=2, b=0, col="red", lty=1)
+  # abline(a=1, b=0, col="red", lty=2)
+  # abline(a=-2, b=0, col="skyblue", lty=1)
+  # abline(a=-1, b=0, col="skyblue", lty=2)
+  
+  plot(stock_data$pr_z_score, type="l", col="darkred", xlab="", ylab="", 
+       main=paste("pr v.s. mpr",stock_pair[1,j],stock_pair[2,j],sep="," ))
+  lines(stock_data$mpr_z_score, type="l", col="darkblue")
+  abline(a=2, b=0, col="gray60", lty=1)
+  abline(a=1, b=0, col="gray60", lty=2)
+  abline(a=-2, b=0, col="gray60", lty=1)
+  abline(a=-1, b=0, col="gray60", lty=2)
+}
