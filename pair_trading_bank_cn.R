@@ -159,7 +159,7 @@ for(i in n_window:n){
   stock_data[i, "pr_msd"] <- sd(stock_data[(i-n_window+1):i, "price_ratio"])
 }
 
-# price rtio's z-score
+# price ratio's z-score
 
 stock_data$pr_z_score <- (stock_data$price_ratio - stock_data$pr_ma)/stock_data$pr_msd
 
