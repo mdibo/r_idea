@@ -26,16 +26,33 @@ source("./stock_tools.R")
 #   sh601398 工商银行
 ############################################################################################################
 
-#  读入数据
+# sh601288
+# 农业银行
 sh601288_fuquan <- read_stock_fuquan("./data/fuquan/601288")
 sh601288_market <- read_stock("./data/market/601288")
 sh601288 <- merge_stock(sh601288_market, sh601288_fuquan)
 rm(sh601288_market,sh601288_fuquan)
 
+# sh601398
+# 工商银行
 sh601398_fuquan <- read_stock_fuquan("./data/fuquan/601398")
 sh601398_market <- read_stock("./data/market/601398")
 sh601398 <- merge_stock(sh601398_market, sh601398_fuquan)
 rm(sh601398_market, sh601398_fuquan)
+
+# sh601939
+# 建设银行
+sh601939_fuquan <- read_stock_fuquan("./data/fuquan/601939")
+sh601939_market <- read_stock("./data/market/601939")
+sh601939 <- merge_stock(sh601939_market, sh601939_fuquan)
+rm(sh601939_market, sh601939_fuquan)
+
+# sh601988
+# 中国银行
+sh601988_fuquan <- read_stock_fuquan("./data/fuquan/601988")
+sh601988_market <- read_stock("./data/market/601988")
+sh601988 <- merge_stock(sh601988_market, sh601988_fuquan)
+rm(sh601988_market, sh601988_fuquan)
 
 # 预处理
 sh601398 <- pre_close_add(sh601398)
@@ -44,6 +61,11 @@ sh601398 <- ohlc_limit_classify(sh601398)
 sh601288 <- pre_close_add(sh601288)
 sh601288 <- ohlc_limit_classify(sh601288)
 
+sh601939 <- pre_close_add(sh601939)
+sh601939 <- ohlc_limit_classify(sh601939)
+
+sh601988 <- pre_close_add(sh601988)
+sh601988 <- ohlc_limit_classify(sh601988)
 
 ############################################################################################################
 #         第二步：设置参数
@@ -57,7 +79,178 @@ sh601288 <- ohlc_limit_classify(sh601288)
 # 多头平仓信号: price_ratio <= 1 & position > 0
 # 空头建仓信号: price_ratio <= -2 & position = 0
 # 空头平仓信号: price_ratio >= -1 & position < 0
-# 辅助购买指标: ohlc_limit_type
+# 辅助购买可行性指标: ohlc_limit_type
+#
+# 交易起止日期: start_date, end_date
+#
+# 滑动窗宽: n_window
 ############################################################################################################
+
+stock_main = sh601398
+stock_sub = sh601988
+
+short_open_price_ratio = 2
+short_close_price_ratio = 1
+long_open_price_ratio = -2
+long_close_price_ratio = -1
+
+start_date = "2011-01-01"
+end_date = "2013-12-31"
+
+n_window = 20
+############################################################################################################
+#         第三步： 数据合并，生成一些需要的因子
+############################################################################################################
+# 需要加入交易日日历
+# 合并成为一个大的 dataframe
+# 输出 main 和 sub 的停牌日期
+# 
+# 交易可行性因子之一：
+# flag_isTrade: 0 or 1
+#
+# 价格比相关因子：
+# price_ratio = log(stock_main_close/stock_sub_close)
+# pr_ma: 价格比滑动平均
+# pr_msd: 价格比滑动标准差
+#
+# 修正价格比相关因子：
+# 
+############################################################################################################
+trade_cal = read.table('./data/trade_cal', sep=",", stringsAsFactors = FALSE, header=TRUE)
+
+stock_main <- stock_main[stock_main$date<=end_date & stock_main$date>=start_date, ]
+stock_sub <- stock_sub[stock_sub$date<=end_date & stock_sub$date>=start_date, ]
+trade_cal_sub <- trade_cal[trade_cal$calendarDate<=end_date & trade_cal$calendarDate>=start_date, ]
+
+stock_data <- merge(x=stock_main, y=stock_sub, by.x="date", by.y="date", all.x=TRUE, all.y=TRUE, suffixes = c("_main", "_sub"))
+stock_data <- merge(x=stock_data, y =trade_cal_sub, by.x="date", by.y ="calendarDate", all.x=TRUE, all.y=TRUE)
+stock_data <- stock_data[stock_data$isOpen==1,]
+
+
+# # 打印停牌日期
+# date_suspension_main <- stock_data[is.na(stock_data$close_main), "date"]
+# date_suspension_sub <- stock_data[is.na(stock_data$close_sub), "date"]
+# 
+# cat("main suspension date: ", paste(date_suspension_main, collapse=","), fill = TRUE)
+# cat("sub suspension date: ", paste(date_suspension_sub, collapse=","), fill = TRUE)
+
+# 加入是否可交易标志
+stock_data$flag_isTrade = as.integer(!(is.na(stock_data$close_main)|is.na(stock_data$close_sub)))
+
+# factor filling
+stock_data$factor_main <- na_filling(stock_data$factor_main)
+stock_data$factor_sub <- na_filling(stock_data$factor_sub)
+  
+# close filling
+stock_data$close_main <- na_filling(stock_data$close_main)
+stock_data$close_sub <- na_filling(stock_data$close_sub)
+
+# price_ratio and price ratio z-score
+stock_data$price_ratio <- log(stock_data$close_main/stock_data$close_sub)
+stock_data$pr_ma <- NA
+stock_data$pr_msd <- NA
+
+for(i in n_window:nrow(stock_data)){
+  
+  stock_data[i, "pr_ma"] <- mean(stock_data[(i-n_window+1):i, "price_ratio"])
+  stock_data[i, "pr_msd"] <- sd(stock_data[(i-n_window+1):i, "price_ratio"])
+}
+
+stock_data$pr_z_score <- (stock_data$price_ratio - stock_data$pr_ma)/stock_data$pr_msd
+
+# 修正价格比
+stock_data$mod_price_ratio <- log(stock_data$close_main/stock_data$close_sub)
+stock_data$mpr_ma <- NA
+stock_data$mpr_msd <- NA
+
+for(i in n_window:nrow(stock_data)){
+  
+  fuquan_price_main <- stock_data[i, "close_main"]*stock_data[i, "factor_main"]/stock_data[i-n_window+1, "factor_main"]
+  fuquan_price_sub <- stock_data[i, "close_sub"]*stock_data[i, "factor_sub"]/stock_data[i-n_window+1, "factor_sub"]
+  stock_data[i, "mod_price_ratio"] <- log(fuquan_price_main/fuquan_price_sub)
+  stock_data[i, "mpr_ma"] <- mean(stock_data[(i-n_window+1):i, "mod_price_ratio"])
+  stock_data[i, "mpr_msd"] <- sd(stock_data[(i-n_window+1):i, "mod_price_ratio"])
+  
+}
+
+stock_data$mpr_z_score <- (stock_data$mod_price_ratio - stock_data$mpr_ma)/stock_data$mpr_msd
+
+
+############################################################################################################
+#         第四步： 粗略快速回测，检测是否可有利润
+############################################################################################################
+# 不考虑以下因素：
+#   - flag_isTrade 以外的成交可能性
+#   - 印花税
+#   - 佣金
+#   - 股息红利等税
+# 回测有错误：
+#   没有考虑到复权因素，甚至我怀疑目前的利润都是由复权贡献的 -- 2016-08-24 by zhuzhi
+############################################################################################################
+
+position = 0
+cost = 0
+profit = 0
+cum_profit = 0
+share_per_trade = 1000
+stock_data$position = 0
+stock_data$cum_profit = 0
+
+
+for(i in (n_window):nrow(stock_data)){
+  #print(i)
+  if(position==0 & stock_data[i, "flag_isTrade"]==1 & stock_data[i, "mpr_z_score"]>=2){
+    # short position open
+    position <- share_per_trade
+    cost <- (stock_data[i, "close_sub"]-stock_data[i, "close_main"])*share_per_trade
+    stock_data[i, "position"] <- position
+    stock_data[i, "cum_profit"] <- cum_profit + 0
+  }else if(position>0 & stock_data[i, "flag_isTrade"]==1 & stock_data[i, "mpr_z_score"]<=1){
+    # short position close
+    position <- 0
+    profit <- (stock_data[i, "close_sub"]-stock_data[i, "close_main"])*share_per_trade - cost
+    stock_data[i, "position"] <- position
+    stock_data[i, "cum_profit"] <- cum_profit + profit
+    cum_profit <- cum_profit + profit
+    cost <- 0
+    
+  }else if(position==0 & stock_data[i, "flag_isTrade"]==1 & stock_data[i, "mpr_z_score"]<=-2){
+    # long position open
+    position <- -share_per_trade
+    cost <- (stock_data[i, "close_main"]-stock_data[i, "close_sub"])*share_per_trade
+    stock_data[i, "position"] <- position
+    stock_data[i, "cum_profit"] <- cum_profit + 0
+  }else if(position<0 & stock_data[i, "flag_isTrade"]==1 & stock_data[i, "mpr_z_score"]>=-1){
+    # long position closed
+    position <- 0
+    profit <- (stock_data[i, "close_main"]-stock_data[i, "close_sub"])*share_per_trade - cost
+    stock_data[i, "position"] <- position
+    stock_data[i, "cum_profit"] <- cum_profit + profit
+    cum_profit <- cum_profit + profit
+    cost <- 0
+    
+  }else if(position>0){
+    # no trade
+    # short in
+    profit <- (stock_data[i, "close_sub"]-stock_data[i, "close_main"])*share_per_trade - cost
+    stock_data[i, "position"] <- position
+    stock_data[i, "cum_profit"] <- cum_profit + profit
+  }else if(position<0){
+    # no trade
+    # short in
+    profit <- (stock_data[i, "close_main"]-stock_data[i, "close_sub"])*share_per_trade - cost
+    stock_data[i, "position"] <- position
+    stock_data[i, "cum_profit"] <- cum_profit + profit
+  }else{
+    # no trade
+    # no position
+    stock_data[i, "position"] <- position
+    stock_data[i, "cum_profit"] <- cum_profit
+  }
+  
+}
+
+
+plot(stock_data$cum_profit, type="l")
 
 
