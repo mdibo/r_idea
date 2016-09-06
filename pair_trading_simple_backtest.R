@@ -263,3 +263,140 @@ plot(stock_data$cum_profit, type="l")
 #   - 股息红利等税
 ############################################################################################################
 
+source("./books_gen.R")
+
+# 初始化四表
+book_list <- books_gen()
+t_rzhzk <- book_list$T_RZHZK
+t_rcj <- book_list$T_RCJ
+t_rcc <- book_list$T_RCC
+t_rwt <- book_list$T_RWT
+
+# 重定义参数
+
+## 数据参数
+stock_main = sh601398
+stock_sub = sh601988
+stock_code_main = "601398"
+stock_code_sub = "601988"
+
+## 信号参数
+short_open_price_ratio = 2
+short_close_price_ratio = 1
+long_open_price_ratio = -2
+long_close_price_ratio = -1
+
+## 时间参数
+start_date = "2011-01-01"
+end_date = "2013-12-31"
+
+## 其他参数
+n_window = 20
+
+## 交易相关参数
+### 1. 初始现金
+cash = 50000
+### 2. 最大仓位,百分比
+max_pos = 0.5
+### 3. 相关费率
+yj_ratio = 0.0005
+yhs_ratio = 0.001
+
+## 底仓建立
+init_date = stock_data[1, "date"]
+init_pos <- round(cash*max_pos/(stock_data[1, "close_main"] + stock_data[1, "close_sub"]), -3)
+### 1. t_rwt
+{
+  # main buy
+  {
+    k_rwt <- nrow(t_rwt)
+    t_rwt[k_rwt+1, "RQ"] <- init_date
+    t_rwt[k_rwt+1, "ZQDM"] <- stock_code_main
+    t_rwt[k_rwt+1, "WTJG"] <- stock_data[1, "close_main"]
+    t_rwt[k_rwt+1, "WTSL"] <- init_pos
+    t_rwt[k_rwt+1, "WTJE"] <- init_pos*stock_data[1, "close_main"]
+    t_rwt[k_rwt+1, "MMFX"] <- "B"
+    t_rwt[k_rwt+1, "CJBZ"] <- "deal"
+  }
+  # sub buy
+  {
+    k_rwt <- nrow(t_rwt)
+    t_rwt[k_rwt+1, "RQ"] <- init_date
+    t_rwt[k_rwt+1, "ZQDM"] <- stock_code_sub
+    t_rwt[k_rwt+1, "WTJG"] <- stock_data[1, "close_sub"]
+    t_rwt[k_rwt+1, "WTSL"] <- init_pos
+    t_rwt[k_rwt+1, "WTJE"] <- init_pos*stock_data[1, "close_sub"]
+    t_rwt[k_rwt+1, "MMFX"] <- "B"
+    t_rwt[k_rwt+1, "CJBZ"] <- "deal"
+  }
+}
+### 2. t_rcc
+{
+  # main buy
+  {
+    k_rcj <- nrow(t_rcj)
+    t_rcj[k_rcj+1, "RQ"] <- init_date
+    t_rcj[k_rcj+1, "ZQDM"] <- stock_code_main
+    t_rcj[k_rcj+1, "CJJG"] <- stock_data[1, "close_main"]
+    t_rcj[k_rcc+1, "CJSL"] <- init_pos
+    t_rcj[k_rcc+1, "CJJE"] <- init_pos*t_rcj[k_rcj+1, "CJJG"]
+    t_rcj[k_rcc+1, "YJ"] <- t_rcj[k_rcc+1, "CJJE"]*yj_ratio
+  }
+  
+}
+
+
+for(i in (n_window):nrow(stock_data)){
+  #print(i)
+  if(position==0 & stock_data[i, "flag_isTrade"]==1 & stock_data[i, "mpr_z_score"]>=2){
+    # short position open
+    position <- share_per_trade
+    cost <- (stock_data[i, "close_sub"]-stock_data[i, "close_main"])*share_per_trade
+    stock_data[i, "position"] <- position
+    stock_data[i, "cum_profit"] <- cum_profit + 0
+  }else if(position>0 & stock_data[i, "flag_isTrade"]==1 & stock_data[i, "mpr_z_score"]<=1){
+    # short position close
+    position <- 0
+    profit <- (stock_data[i, "close_sub"]-stock_data[i, "close_main"])*share_per_trade - cost
+    stock_data[i, "position"] <- position
+    stock_data[i, "cum_profit"] <- cum_profit + profit
+    cum_profit <- cum_profit + profit
+    cost <- 0
+    
+  }else if(position==0 & stock_data[i, "flag_isTrade"]==1 & stock_data[i, "mpr_z_score"]<=-2){
+    # long position open
+    position <- -share_per_trade
+    cost <- (stock_data[i, "close_main"]-stock_data[i, "close_sub"])*share_per_trade
+    stock_data[i, "position"] <- position
+    stock_data[i, "cum_profit"] <- cum_profit + 0
+  }else if(position<0 & stock_data[i, "flag_isTrade"]==1 & stock_data[i, "mpr_z_score"]>=-1){
+    # long position closed
+    position <- 0
+    profit <- (stock_data[i, "close_main"]-stock_data[i, "close_sub"])*share_per_trade - cost
+    stock_data[i, "position"] <- position
+    stock_data[i, "cum_profit"] <- cum_profit + profit
+    cum_profit <- cum_profit + profit
+    cost <- 0
+    
+  }else if(position>0){
+    # no trade
+    # short in
+    profit <- (stock_data[i, "close_sub"]-stock_data[i, "close_main"])*share_per_trade - cost
+    stock_data[i, "position"] <- position
+    stock_data[i, "cum_profit"] <- cum_profit + profit
+  }else if(position<0){
+    # no trade
+    # short in
+    profit <- (stock_data[i, "close_main"]-stock_data[i, "close_sub"])*share_per_trade - cost
+    stock_data[i, "position"] <- position
+    stock_data[i, "cum_profit"] <- cum_profit + profit
+  }else{
+    # no trade
+    # no position
+    stock_data[i, "position"] <- position
+    stock_data[i, "cum_profit"] <- cum_profit
+  }
+  
+}
+
+
